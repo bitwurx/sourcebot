@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
 """
@@ -79,6 +79,11 @@ tests:
 clean:
 \t@rm -rf $(DIST)
 \t@find * -name "*.pyc" -print | xargs rm -rf
+
+.PHONY: dev
+dev:
+\tpip install -r requirements/devl.txt
+\tpip install -r requirements/test.txt
 """
 
 TRAVIS_YML = """\
@@ -158,6 +163,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 def main():
     args = sys.argv
+    edit = False
 
     try:
         proj = args[1]
@@ -204,7 +210,7 @@ def main():
 
         return 0
 
-    # createt a new package in the current working directory
+    # create a new package in the current working directory
     if proj == '~package':
         try:
             package_name = args[2]
@@ -222,6 +228,16 @@ def main():
         os.system('touch __init__.py main.py lib/__init__.py package.yaml')
 
         return 0
+
+    # edit an existing project build.json
+    if proj == '~edit':
+        try:
+            proj = args[2]
+            edit = True
+        except IndexError:
+            print('no project was provided')
+
+            return 1
 
     # get the .sourcebotrc ENVS path
     try:
@@ -243,6 +259,12 @@ def main():
 
         return 1
 
+    # open editor if edit action was provided to sourcebot
+    if edit is True:
+        os.system('vi build.json')
+
+        return 1
+
     # check for build.json in current working directory
     try:
         bjson = open('build.json', 'r')
@@ -252,7 +274,7 @@ def main():
         print('No build.json found')
         sys.exit(1)
     except ValueError as e:
-        print('build.json error - {}'.format(e.message))
+        print('build.json error - {}'.format(e))
         sys.exit(1)
 
     name = build['name']
@@ -260,7 +282,9 @@ def main():
     base = os.path.join(envs, name)
 
     # create virtual environment and cd to venv base
-    os.system('cd {} && virtualenv --no-site-packages {}'.format(envs, name))
+    if not os.path.exists(base):
+        os.system('cd {} && virtualenv --no-site-packages {}'.format(
+            envs, name))
 
     # change to venv base directory
     os.system('mkdir -p {}'.format(os.path.join(base, name)))
@@ -276,12 +300,18 @@ def main():
     os.system('mkdir -p {}'.format(os.path.join('tests', 'fixtures')))
 
     # add project confifugration file
-    os.system('touch {0}/{0}.yml'.format(name))
+    os.system('touch {0}/{0}.yaml'.format(name))
 
     # make __init__.py files
-    for root, dirs, files in os.walk(os.path.join(os.getcwd())):
-        if root != os.getcwd():
-            os.system('touch {}/__init__.py'.format(root))
+    init_dirs = (
+        os.path.join('tests'),
+        os.path.join('tests', 'unit'),
+        os.path.join('tests', 'integration'),
+        os.path.join(name),
+    )
+
+    for init_dir in init_dirs:
+        os.system('touch {}/__init__.py'.format(init_dir))
 
     # make requirements
     os.system('mkdir -p %s' % os.path.join('requirements'))
@@ -325,7 +355,7 @@ def main():
                                               author=build['author']))
 
     # setup git repo
-    if build.get('vcs', '').lower() == 'git':
+    if build.get('vcs', '').lower() == 'git' and not os.path.exists('.git'):
         os.system('git init')
         os.system('git config user.name "{}"'.format(build['author']))
         os.system('git config user.email {}'.format(build['author_email']))
