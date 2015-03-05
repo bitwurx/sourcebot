@@ -1,0 +1,27 @@
+{
+    "envs": "/home/jaredpatrick/Envs",
+    "name": "my_app",
+    "description": "",
+    "author": "Jared Patrick",
+    "author_email": "jared.patrick@gmail.com",
+    "url": "",
+    "version": "0.0.1",
+    "license": "MIT",
+    "vcs": "git",
+    "requirements": {
+        "base": [
+            "django==1.7"
+        ],
+        "devl": [
+            "sphinx"
+        ],
+        "prod": [],
+        "test": [
+            "tox"
+        ]
+    },
+    "compatibility": [
+        "2.7",
+        "3.4"
+    ]
+}
