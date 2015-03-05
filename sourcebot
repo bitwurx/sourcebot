@@ -1,7 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- encoding: utf-8 -*-
-
-from __future__ import print_function
 
 """
 The MIT License (MIT)
@@ -288,7 +286,7 @@ def main():
     # make requirements
     os.system('mkdir -p %s' % os.path.join('requirements'))
 
-    for rname, packages in build['requirements'].iteritems():
+    for rname, packages in build['requirements'].items():
         path = os.path.join('requirements', '{}.txt'.format(rname))
 
         with open(path, 'w') as reqf:
