@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
+from __future__ import print_function
+
 """
 The MIT License (MIT)
 
@@ -25,7 +27,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-"""Sourcebot -- python project automated bootstrap utility
+"""Sourcebot -- python project automation utility
 
 .. moduleauthor: Jared Patrick <jared.patrick@gmail.com>
 """
@@ -37,6 +39,7 @@ import json
 
 from datetime import datetime
 
+VERSION = '0.0.1'
 
 SETUP = """\
 from setuptools import setup
@@ -59,9 +62,15 @@ DIST=build dist sdist bdist $(NAME).egg-info
 
 all: install clean
 
+remove: uninstall clean
+
 .PHONY: install
 install:
 \tpython setup.py install
+
+.PHONY: uninstall
+uninstall:
+\tpip uninstall -y $(NAME)
 
 .PHONY: tests
 tests:
@@ -155,7 +164,9 @@ def main():
     try:
         proj = args[1]
     except IndexError:
-        print 'usage: sourcebot PROJECT_NAME APP_NAME'
+        print('Sourcebot ~ v{}'.format(VERSION))
+        print('usage: sourcebot [PROJECT_NAME[~TASK] [APP_NAME]')
+
         return 1
 
     # configure a new system for sourcebot
@@ -163,13 +174,19 @@ def main():
         try:
             envs = args[2]
         except IndexError:
-            print 'no environment path was provided'
+            print('no environment path was provided')
+
+        if os.getenv('USER') != 'root':
+            print('* persmission denied (run as sudo)')
+
+            return 1
 
         user = os.getenv('SUDO_USER')
         conf = '/home/{}/.sourcebotrc'.format(user)
 
         if os.path.exists(conf):
-            print 'sourcebot has already been intialized'
+            print('sourcebot has already been intialized')
+
             return 0
 
         # create sourebot symlink
@@ -185,23 +202,27 @@ def main():
         if not os.path.exists('.builds'):
             os.system('mkdir .builds')
 
+        os.system('chown {0}:{0} .builds'.format(user))
+
         return 0
 
-    # createt a new app in the current working directory
-    if proj == '~app':
+    # createt a new package in the current working directory
+    if proj == '~package':
         try:
-            app_name = args[2]
+            package_name = args[2]
         except IndexError:
-            print 'no app name was provided'
+            print('no package name was provided')
+
             return 1
 
-        # create and change to new app dir
-        os.system('mkdir {}'.format(app_name))
-        os.chdir(app_name)
+        # create and change to new package dir
+        os.system('mkdir {}'.format(package_name))
+        os.chdir(package_name)
 
-        # create app dirs and files
+        # create package dirs and files
         os.system('mkdir lib')
-        os.system('touch __init__.py main.py lib/__init__.py app.yml')
+        os.system('touch __init__.py main.py lib/__init__.py package.yaml')
+
         return 0
 
     # get the .sourcebotrc ENVS path
@@ -212,14 +233,16 @@ def main():
         path = os.path.join(envs, '.builds', proj)
         conf.close()
     except IOError:
-        print 'no .sourcebotrc found in user home directory'
+        print('no .sourcebotrc found in user home directory')
+
         return 1
 
     # check if project path exists
     if os.path.exists(path):
         os.chdir(path)
     else:
-        print 'could not find project build path: {}'.format(proj)
+        print('could not find project build path: {}'.format(proj))
+
         return 1
 
     # check for build.json in current working directory
@@ -228,10 +251,10 @@ def main():
         build = json.loads(bjson.read())
         bjson.close()
     except IOError:
-        print 'No build.json found'
+        print('No build.json found')
         sys.exit(1)
     except ValueError as e:
-        print 'build.json error - %s' % e.message
+        print('build.json error - {}'.format(e.message))
         sys.exit(1)
 
     name = build['name']
@@ -239,31 +262,34 @@ def main():
     base = os.path.join(envs, name)
 
     # create virtual environment and cd to venv base
-    os.system('cd %s && virtualenv --no-site-packages %s' % (envs, name))
+    os.system('cd {} && virtualenv --no-site-packages {}'.format(envs, name))
 
     # change to venv base directory
-    os.system('mkdir -p %s' % os.path.join(base, name))
+    os.system('mkdir -p {}'.format(os.path.join(base, name)))
     os.chdir(os.path.join(base, name))
 
     # add README.md and LICENSE.md
     os.system('touch README.md LICENSE.md')
 
     # make python directories
-    os.system('mkdir -p %s' % os.path.join(name))
-    os.system('mkdir -p %s' % os.path.join('tests', 'unit'))
-    os.system('mkdir -p %s' % os.path.join('tests', 'integration'))
-    os.system('mkdir -p %s' % os.path.join('tests', 'fixtures'))
+    os.system('mkdir -p {}'.format(os.path.join(name)))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'unit')))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'integration')))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'fixtures')))
+
+    # add project confifugration file
+    os.system('touch {0}/{0}.yml'.format(name))
 
     # make __init__.py files
     for root, dirs, files in os.walk(os.path.join(os.getcwd())):
         if root != os.getcwd():
-            os.system('touch %s/__init__.py' % root)
+            os.system('touch {}/__init__.py'.format(root))
 
     # make requirements
     os.system('mkdir -p %s' % os.path.join('requirements'))
 
     for rname, packages in build['requirements'].iteritems():
-        path = os.path.join('requirements', '%s.txt' % rname)
+        path = os.path.join('requirements', '{}.txt'.format(rname))
 
         with open(path, 'w') as reqf:
             if rname != 'base':
@@ -280,9 +306,9 @@ def main():
     with open('Makefile', 'w') as makef:
         makef.write(MAKEFILE.format(name=name))
 
-    # build .traivs.yml
-    with open('.travis.yml', 'w') as travisf:
-        vers = ['- %s' % ver for ver in build['compatibility']]
+    # build .traivs.yaml
+    with open('.travis.yaml', 'w') as travisf:
+        vers = ['- {}'.format(ver) for ver in build['compatibility']]
         travisf.write(TRAVIS_YML.format(vers='\n\t'.join(vers)))
 
     # build tox.ini
