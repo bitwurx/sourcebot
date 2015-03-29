@@ -138,7 +138,7 @@ envlist = {vers}
 
 [base]
 deps =
-	six
+    six
     nose
     rednose
     mock
