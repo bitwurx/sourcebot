@@ -1,0 +1,481 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+"""
+The MIT License (MIT)
+
+Copyright (c) <2015> <Jared Patrick>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
+"""Sourcebot -- python project automation utility
+
+.. moduleauthor: Jared Patrick <jared.patrick@gmail.com>
+"""
+
+import os
+import re
+import sys
+import json
+
+from datetime import datetime
+
+VERSION = '0.0.1'
+
+BUILD = """\
+{
+    "name": "",
+    "description": "",
+    "author": "",
+    "author_email": "",
+    "url": "",
+    "version": "",
+    "license": "",
+    "vcs": "",
+    "requirements": {
+        "base": [],
+        "devl": [],
+        "prod": [],
+        "test": [
+            "tox"
+        ]
+    },
+    "compatibility": []
+}
+"""
+
+SETUP = """\
+from setuptools import setup, find_packages
+
+setup(
+    name='{name}',
+    description='{description}',
+    version='{version}',
+    author='{author}',
+    author_email='{author_email}',
+    url='{url}',
+    packages=find_packages(),
+    scripts=[]
+)
+"""
+
+MAKEFILE = """\
+NAME={name}
+DIST=build dist sdist bdist $(NAME).egg-info
+
+all: install clean
+
+remove: uninstall clean
+
+.PHONY: install
+install:
+\tpython setup.py install
+
+.PHONY: uninstall
+uninstall:
+\tpip uninstall -y $(NAME)
+
+.PHONY: tests
+tests:
+\ttox
+\tmake clean
+
+.PHONY: clean
+clean:
+\t@rm -rf $(DIST)
+\t@find * -name "*.pyc" -print | xargs rm -rf
+\t@find * -name .coverage -print | xargs rm -rf
+\t@find * -name coverage.xml -print | xargs rm -rf
+\t@find * -name nosetests.xml -print | xargs rm -rf
+
+.PHONY: devl
+devl:
+\tpip install -r requirements/devl.txt
+
+.PHONY: prod
+prod:
+\tpip install -r requirements/prod.txt
+
+.PHONY: test
+test:
+\tpip install -r requirements/test.txt
+"""
+
+TRAVIS_YML = """\
+language: python
+python:
+    {vers}
+install:
+    - pip install -r requirements/test.txt
+script: make tests
+"""
+
+TOX_INI = """\
+# Tox (http://tox.testrun.org/) is a tool for running tests
+# in multiple virtualenvs. This configuration file will run the
+# test suite on all supported python versions. To use it, "pip install tox"
+# and then run "tox" from this directory.
+
+[tox]
+envlist = {vers}
+
+[base]
+deps =
+	six
+    nose
+    rednose
+    mock
+    pep8
+    coverage
+
+[testenv]
+commands =
+    nosetests --rednose --with-xunit --with-coverage --cover-package {name}
+    pep8 {name}
+    pep8 tests
+    python -m coverage xml
+{envs}"""
+
+
+LICENSES = {
+    'MIT': """\
+The MIT License (MIT)
+
+Copyright (c) <{year}> <{author}>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+""",
+    'GPL3': """\
+{desc}
+Copyright (C) <{year}>  <{author}>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
+}
+
+
+
+def main():
+    args = sys.argv
+    edit = False
+
+    try:
+        proj = args[1]
+    except IndexError:
+        print('Sourcebot ~ v{}'.format(VERSION))
+        print('usage: sourcebot [PROJECT_NAME[~TASK] [APP_NAME]')
+
+        return 1
+
+    # configure a new system for sourcebot
+    if proj == '~install':
+        try:
+            envs = args[2]
+        except IndexError:
+            print('no environment path was provided')
+
+            return 1
+    
+        if not os.path.exists(envs):
+            print('invalid directory {}'.format(envs))
+            return 1
+
+        if os.getenv('USER') != 'root':
+            print('* persmission denied (run as sudo)')
+
+            return 1
+
+        user = os.getenv('SUDO_USER')
+        conf = '/home/{}/.sourcebotrc'.format(user)
+
+        if os.path.exists(conf):
+            print('sourcebot has already been intialized')
+
+            return 0
+
+        # create sourebot symlink
+        os.system('mkdir /opt/sourcebot && cp sourcebot /opt/sourcebot/')
+        os.system('ln -s /opt/sourcebot/sourcebot /usr/bin/sourcebot'.format(
+            os.getcwd()))
+
+        # create .sourcebotrc file
+        with open(conf, 'w') as rc:
+            rc.write('ENVS={}\n'.format(envs))
+
+        os.chdir(envs)
+
+        # create env dir projects .builds directory
+        if not os.path.exists('.builds'):
+            os.system('mkdir .builds')
+
+        os.system('chown {0}:{0} .builds'.format(user))
+
+        return 0
+
+    if proj == '~uninstall':
+        if raw_input('Uninstall sourcebot? (y/n): ') != 'y':
+            return 0
+
+        if os.getenv('USER') != 'root':
+            print('* persmission denied (run as sudo)')
+
+            return 1
+
+        user = os.getenv('SUDO_USER')
+        conf = '/home/{}/.sourcebotrc'.format(user)
+
+        os.system('rm -rf {}'.format(conf))
+        os.system('rm -rf /opt/sourcebot')
+        os.system('rm -rf /usr/bin/sourcebot')     
+
+        return 1
+
+    if proj == '~init':
+        try:
+            proj = args[2]
+            user = os.getenv('USER')
+            conf = open('/home/{}/.sourcebotrc'.format(user), 'r')
+            envs = re.search(r'(?m)^ENVS=(.*)\n', conf.read()).group(1)
+        except IndexError:
+            print('no project name was provided')
+
+            return 1
+
+        os.chdir(os.path.join(envs, '.builds'))
+
+        if (not os.path.exists(proj) and 
+                not os.path.exists(os.path.join(proj, 'build.json'))):
+            os.mkdir(proj)
+
+            build = open('{}/build.json'.format(proj), 'w')
+            build.write(BUILD)
+            build.close()
+
+        return 0
+
+    # create a new package in the current working directory
+    if proj == '~package':
+        try:
+            package_name = args[2]
+        except IndexError:
+            print('no package name was provided')
+
+            return 1
+
+        # create and change to new package dir
+        os.system('mkdir {}'.format(package_name))
+        os.chdir(package_name)
+
+        # create package dirs and files
+        os.system('mkdir lib')
+        os.system('touch __init__.py lib/__init__.py package.yml')
+
+        return 0
+
+    # edit an existing project build.json
+    if proj == '~edit':
+        try:
+            proj = args[2]
+            edit = True
+        except IndexError:
+            print('no project was provided')
+
+            return 1
+
+    # get the .sourcebotrc ENVS path
+    try:
+        user = os.getenv('USER')
+        conf = open('/home/{}/.sourcebotrc'.format(user), 'r')
+        envs = re.search(r'(?m)^ENVS=(.*)\n', conf.read()).group(1)
+        path = os.path.join(envs, '.builds', proj)
+        conf.close()
+    except IOError:
+        print('no .sourcebotrc found in user home directory')
+
+        return 1
+
+    # check if project path exists
+    if os.path.exists(path):
+        os.chdir(path)
+    else:
+        print('could not find project build path: {}'.format(proj))
+
+        return 1
+        
+    # open editor if edit action was provided to sourcebot
+    if edit is True:
+        os.system('vi build.json')
+
+        return 1
+
+    # check for build.json in current working directory
+    try:
+        bjson = open('build.json', 'r')
+        build = json.loads(bjson.read())
+        bjson.close()
+    except IOError:
+        print('No build.json found')
+        
+        return 1
+    except ValueError as e:
+        print('build.json error - {}'.format(e))
+        
+        return 1
+
+    name = build['name']
+    base = os.path.join(envs, name)
+
+    if name == '':
+        print ('build.json project name is undefined')
+
+        return 1
+
+    # create virtual environment and cd to venv base
+    if not os.path.exists(base):
+        os.system('cd {} && virtualenv --no-site-packages {}'.format(
+            envs, name))
+    else:
+        os.chdir(envs)
+
+    # change to venv base directory
+    os.system('mkdir -p {}'.format(os.path.join(base, name)))
+    os.chdir(os.path.join(base, name))
+
+    # add README.md
+    os.system('touch README.md')
+
+    # make python directories
+    os.system('mkdir -p {}'.format(os.path.join(name)))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'unit')))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'integration')))
+    os.system('mkdir -p {}'.format(os.path.join('tests', 'fixtures')))
+
+    # add project confifugration file
+    os.system('touch {0}/{0}.yml'.format(name))
+
+    # make __init__.py files
+    init_dirs = (
+        os.path.join('tests'),
+        os.path.join('tests', 'unit'),
+        os.path.join('tests', 'integration'),
+        os.path.join(name),
+    )
+
+    for init_dir in init_dirs:
+        os.system('touch {}/__init__.py'.format(init_dir))
+
+    # make requirements
+    os.system('mkdir -p %s' % os.path.join('requirements'))
+
+    for rname, packages in build['requirements'].items():
+        path = os.path.join('requirements', '{}.txt'.format(rname))
+
+        with open(path, 'w') as reqf:
+            if rname == 'devl':
+                # append test requirements to development requirements
+                packages = ['-r test.txt'] + packages
+
+            if rname != 'base':
+                # append base requirements to targetted requirements
+                packages = ['-r base.txt'] + packages
+
+            reqf.write('\n'.join([package for package in packages]))
+
+    # build setup
+    with open('setup.py', 'w') as setupf:
+        setupf.write(SETUP.format(**build))
+
+    # build Makefile
+    with open('Makefile', 'w') as makef:
+        makef.write(MAKEFILE.format(name=name))
+
+    # build .traivs.yml
+    with open('.travis.yml', 'w') as travisf:
+        vers = ['- {}'.format(ver) for ver in build['compatibility']]
+        travisf.write(TRAVIS_YML.format(vers='\n    '.join(vers)))
+
+    # build tox.ini
+    if not os.path.exists('tox.ini'):
+        with open('tox.ini', 'w') as toxf:
+            vers = ', '.join(['py' + v.replace('.', '') 
+                             for v in build['compatibility']])
+            testenv = '\n[testenv:{}]\ndeps =\n   {{[base]deps}}\n'
+            testenv = ''.join([testenv.format(e) for e in vers.split(', ')])
+            toxf.write(TOX_INI.format(name=name, vers=vers, envs=testenv))
+
+    # build LICENSE
+    if build.get('license', '') != '':
+        license = LICENSES.get(build['license'].upper(), None)
+
+        if license is not None:
+            with open('LICENSE', 'w') as licensef:
+                licensef.write(license.format(desc=build['description'],
+                                              year=datetime.now().year,
+                                              author=build['author']))
+
+    # setup git repo
+    if (build.get('vcs', '').lower() == 'git' and 
+            not os.path.exists('.git')):
+        os.system('git init')
+        os.system('git config user.name "{}"'.format(build['author']))
+        os.system('git config user.email {}'.format(build['author_email']))
+        os.system('git add .')
+        os.system('git commit -m "initial commit"')
+
+    # setup fossil repo    
+    if (build.get('vcs', '').lower() == 'fossil' and
+            not os.path.exists('{}.fossil'.format(name))):
+        os.system('fossil init {}.fossil'.format(name))
+        os.system('fossil open {}.fossil'.format(name))
+        os.system('fossil add .')
+        os.system('fossil commit -m "initial commit"')
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
