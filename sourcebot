@@ -375,7 +375,8 @@ def main():
         
         return 1
 
-    name = build['name'].lower()
+    name_proper = build['name']
+    name = name_proper.lower()
     base = os.path.join(envs, name)
 
     if name == '':
@@ -441,7 +442,7 @@ def main():
 
     # build Makefile
     with open('Makefile', 'w') as makef:
-        makef.write(MAKEFILE.format(name=name))
+        makef.write(MAKEFILE.format(name=name_proper))
 
     # build .traivs.yml
     with open('.travis.yml', 'w') as travisf:
