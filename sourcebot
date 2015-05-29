@@ -30,10 +30,11 @@ THE SOFTWARE.
 .. moduleauthor: Jared Patrick <jared.patrick@gmail.com>
 """
 
+import json
 import os
 import re
+import subprocess
 import sys
-import json
 
 from datetime import datetime
 
@@ -57,7 +58,9 @@ BUILD = """\
             "tox"
         ]
     },
-    "compatibility": []
+    "compatibility": [
+        2.7
+    ]
 }
 """
 
@@ -197,6 +200,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 }
 
+INSTALL_DEPS = """\
+#!/bin/bash
+
+. ../bin/activate
+pip install --upgrade pip
+pip install -r requirements/devl.txt
+"""
 
 
 def main():
@@ -366,7 +376,7 @@ def main():
         
         return 1
 
-    name = build['name']
+    name = build['name'].lower()
     base = os.path.join(envs, name)
 
     if name == '':
@@ -413,13 +423,14 @@ def main():
 
     for rname, packages in build['requirements'].items():
         path = os.path.join('requirements', '{}.txt'.format(rname))
+        exclude_base = ['base', 'test']
 
         with open(path, 'w') as reqf:
             if rname == 'devl':
                 # append test requirements to development requirements
                 packages = ['-r test.txt'] + packages
 
-            if rname != 'base':
+            if rname not in exclude_base:
                 # append base requirements to targetted requirements
                 packages = ['-r base.txt'] + packages
 
@@ -474,8 +485,15 @@ def main():
         os.system('fossil add .')
         os.system('fossil commit -m "initial commit"')
 
-    return 0
+    # create install script to install development dependencies
+    with open('requirements/install.sh', 'w') as installf:
+        installf.write(INSTALL_DEPS)
+    
+    os.chmod('requirements/install.sh', 0777)
+    os.system('./requirements/install.sh')
+    os.remove('requirements/install.sh')
 
+    return 0 
 
 if __name__ == '__main__':
     sys.exit(main())
